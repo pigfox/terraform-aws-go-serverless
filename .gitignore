@@ -1,0 +1,28 @@
+# Terraform / OpenTofu working state. State files never belong in git: they
+# can hold resource attributes in plain text.
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Build output of examples/serverless-api/build.sh
+examples/serverless-api/build/
+
+# Any env file, in any directory, under any suffix.
+.env
+.env.*
+*.env
+
+# Go
+*.test
+cover.out
