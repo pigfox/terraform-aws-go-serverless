@@ -1,0 +1,37 @@
+# Copy to .github/workflows/deploy.yml in the repository named by
+# var.github_repository. There are no AWS keys anywhere: the job asks GitHub for
+# a short-lived OIDC token and exchanges it for one-hour credentials for the
+# role this example creates. Only pushes to main can do that exchange.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write # needed to request the OIDC token
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Build
+        run: ./examples/serverless-api/build.sh
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/go-serverless-hello-deploy # the role_arn output
+          aws-region: us-east-1
+
+      - name: Ship
+        run: |
+          aws lambda update-function-code \
+            --function-name go-serverless-hello \
+            --zip-file fileb://examples/serverless-api/build/bootstrap.zip

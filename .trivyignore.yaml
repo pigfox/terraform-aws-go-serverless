@@ -1,0 +1,68 @@
+# Every accepted trivy finding, each scoped to the files it applies to and each
+# with the reason it is a deliberate default rather than an oversight. CI runs
+# trivy with --exit-code 1 at every severity, so anything NOT listed here fails
+# the build. Adding an entry is a design decision: say why in `statement`.
+misconfigurations:
+  - id: AWS-0017
+    paths:
+      - modules/go-lambda/main.tf
+      - modules/http-api/main.tf
+      - modules/fargate-task/main.tf
+    statement: >-
+      CloudWatch log groups are encrypted at rest by the service by default.
+      AWS-0017 asks for a customer-managed KMS key, which costs about $1/month
+      per key plus requests; the modules avoid customer keys by default.
+
+  - id: AWS-0025
+    paths:
+      - modules/dynamodb-table/main.tf
+    statement: >-
+      DynamoDB always encrypts at rest; the default is the free AWS-owned key.
+      A customer-managed key is supported through kms_key_arn but is not the
+      default, to keep KMS charges out of the baseline.
+
+  - id: AWS-0033
+    paths:
+      - modules/fargate-task/main.tf
+    statement: >-
+      The ECR repository is encrypted with AES256 (SSE-S3). KMS encryption
+      would need a customer-managed key, which the modules avoid by default.
+
+  - id: AWS-0034
+    paths:
+      - modules/fargate-task/main.tf
+    statement: >-
+      Container Insights is billed per metric and is off to keep an idle or
+      nightly job near $0/month. Task logs still go to CloudWatch Logs.
+
+  - id: AWS-0066
+    paths:
+      - modules/go-lambda/main.tf
+    statement: >-
+      X-Ray active tracing is billed per trace beyond the free tier and needs a
+      wildcard-resource IAM grant (xray:PutTraceSegments has no resource-level
+      permissions). Off by default; structured JSON logs are on.
+
+  - id: AWS-0089
+    paths:
+      - modules/s3-bucket/main.tf
+    statement: >-
+      Server access logging needs a second bucket to receive the logs. It is
+      supported through access_log_bucket and off by default.
+
+  - id: AWS-0104
+    paths:
+      - modules/fargate-task/main.tf
+    statement: >-
+      Egress to 0.0.0.0/0 on TCP 443 is how a task in a public subnet reaches
+      ECR and CloudWatch Logs without a NAT gateway (about $33/month) or VPC
+      interface endpoints (about $7/month each). The group has no inbound
+      rules. allow_all_egress widens it only when set.
+
+  - id: DS-0026
+    paths:
+      - examples/scheduled-fargate-job/job/Dockerfile
+    statement: >-
+      The image is a batch job that runs to completion and exits; there is no
+      long-running process for a HEALTHCHECK to probe, and the scratch image
+      has no shell to run one.
