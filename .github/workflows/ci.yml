@@ -67,6 +67,9 @@ jobs:
       - name: validate every module and example
         run: ./scripts/validate-all.sh
 
+      - name: test shape matches tests/ASSERTIONS (a deleted assert fails here)
+        run: ./scripts/assert-count.sh
+
       - name: test (mock provider, no AWS)
         run: |
           $TF init -backend=false

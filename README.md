@@ -106,6 +106,8 @@ validation (bad input must be rejected) and security properties (the bucket is
 not public, the role has no wildcard, logs expire). Most runs are `plan`; the few
 that check wiring between computed IDs use `apply` against the mock, because
 that is the only way both Terraform and OpenTofu make computed values known.
+Each file's run and assertion counts are declared in `tests/ASSERTIONS`, and CI
+fails if they drift, so deleting a check cannot pass silently.
 
 [`test/`](test) holds a Terratest suite that applies `examples/serverless-api`
 for real, calls the endpoint, destroys it, and then asks the tagging API whether

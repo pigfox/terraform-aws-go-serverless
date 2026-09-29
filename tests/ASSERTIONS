@@ -1,0 +1,15 @@
+# Declared shape of every test file: run blocks, assert blocks, and
+# expect_failures lines. scripts/assert-count.sh fails CI unless the files
+# match this exactly, so a deleted assertion (which Terraform would never
+# notice: fewer checks still pass) turns the build red. Change a test, then
+# change its line here in the same commit; the diff shows reviewers what moved.
+#
+# file                          runs  assert  expect_failures
+budget_alarm.tftest.hcl         5     10      3
+dynamodb_table.tftest.hcl       5     13      3
+fargate_task.tftest.hcl         9     24      5
+github_oidc_role.tftest.hcl     8     13      6
+go_lambda.tftest.hcl            12    20      8
+http_api.tftest.hcl             7     14      4
+root.tftest.hcl                 5     8       2
+s3_bucket.tftest.hcl            7     17      2

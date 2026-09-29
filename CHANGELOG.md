@@ -30,6 +30,10 @@ follow [Semantic Versioning](https://semver.org/) once the first release is tagg
 - A Terratest suite for `examples/serverless-api`, gated behind `TERRATEST_LIVE=1`.
 - CI: fmt, validate, tflint, trivy, mocked tests, terraform-docs drift check,
   Go checks, repository hygiene.
+- `tests/ASSERTIONS` and `scripts/assert-count.sh`: each test file's run,
+  assert and `expect_failures` counts are declared, and CI fails on any
+  difference or on a vacuous `condition = true`, so a removed assertion turns
+  the build red instead of quietly proving less.
 
 ### Not yet done
 
