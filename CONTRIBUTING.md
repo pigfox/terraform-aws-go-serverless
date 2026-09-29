@@ -16,6 +16,7 @@ Thanks for helping. Issues and pull requests are welcome.
 terraform fmt -recursive
 ./scripts/validate-all.sh               # TF=tofu ./scripts/validate-all.sh for OpenTofu
 terraform init -backend=false && terraform test
+./scripts/assert-count.sh                # test files match tests/ASSERTIONS
 tflint --init && tflint --recursive
 trivy config --ignorefile .trivyignore.yaml --exit-code 1 .
 ./scripts/docs.sh                        # regenerates module READMEs; commit the result
@@ -41,7 +42,10 @@ A change that breaks one of these needs a very good reason in the pull request.
    `tests/<module>.tftest.hcl` runs covering the default, at least one
    rejection, and any security property it adds. Tests use `mock_provider`
    only, must pass on both Terraform and OpenTofu, and use `command = plan`
-   unless an assertion needs a computed value.
+   unless an assertion needs a computed value. Update the file's line in
+   `tests/ASSERTIONS` in the same commit: CI fails if the declared run, assert
+   and `expect_failures` counts differ from the file, so a deleted check cannot
+   pass unnoticed.
 6. **A new trivy exception is a design decision.** Add it to `.trivyignore.yaml`
    scoped to its file, with a `statement` explaining why.
 
