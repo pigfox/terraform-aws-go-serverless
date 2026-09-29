@@ -1,0 +1,178 @@
+# Free checks only. This workflow holds no AWS credentials, requests no OIDC
+# token and applies nothing: every Terraform test runs against a mock provider.
+# The live Terratest suite in test/ is skipped here (TERRATEST_LIVE is unset),
+# and a test in that package fails if it ever stops skipping.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+  TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.plugin-cache
+  # Lock files are not committed for modules, so let init reuse the cache.
+  TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE: "true"
+  TFLINT_VERSION: v0.64.0
+  TRIVY_VERSION: 0.74.0
+  TERRAFORM_DOCS_VERSION: v0.24.0
+
+jobs:
+  terraform:
+    # fmt, validate every root, and the mocked tests, on the oldest and newest
+    # supported release of each tool.
+    name: ${{ matrix.tool }} ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { tool: terraform, version: 1.10.5 }
+          - { tool: terraform, version: 1.16.4 }
+          - { tool: tofu, version: 1.10.10 }
+          - { tool: tofu, version: 1.12.6 }
+    env:
+      TF: ${{ matrix.tool }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - if: matrix.tool == 'terraform'
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ matrix.version }}
+          terraform_wrapper: false
+
+      - if: matrix.tool == 'tofu'
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: ${{ matrix.version }}
+          tofu_wrapper: false
+
+      - run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
+      - name: fmt
+        run: $TF fmt -check -recursive -diff
+
+      - name: validate every module and example
+        run: ./scripts/validate-all.sh
+
+      - name: test (mock provider, no AWS)
+        run: |
+          $TF init -backend=false
+          $TF test -verbose
+
+  tflint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: ${{ env.TFLINT_VERSION }}
+      - run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: tflint --recursive --format compact
+
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: install trivy (release binary, checksum verified)
+        run: |
+          cd "$RUNNER_TEMP"
+          base="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+          tarball="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSLO "$base/$tarball"
+          curl -fsSLO "$base/trivy_${TRIVY_VERSION}_checksums.txt"
+          grep " $tarball\$" "trivy_${TRIVY_VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "$tarball" trivy
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: config scan (every severity fails; accepted findings are in .trivyignore.yaml)
+        run: trivy config --ignorefile .trivyignore.yaml --exit-code 1 --skip-dirs '**/.terraform' .
+      - name: secret scan
+        run: trivy fs --scanners secret --exit-code 1 .
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: install terraform-docs (release binary, checksum verified)
+        run: |
+          cd "$RUNNER_TEMP"
+          base="https://github.com/terraform-docs/terraform-docs/releases/download/${TERRAFORM_DOCS_VERSION}"
+          tarball="terraform-docs-${TERRAFORM_DOCS_VERSION}-linux-amd64.tar.gz"
+          curl -fsSLO "$base/$tarball"
+          curl -fsSL -o sums "$base/terraform-docs-${TERRAFORM_DOCS_VERSION}.sha256sum"
+          grep " $tarball\$" sums | sha256sum -c -
+          tar -xzf "$tarball" terraform-docs
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: README drift check
+        run: ./scripts/docs.sh --check
+
+  go:
+    # The example programs and the Terratest suite: formatted, vetted, built,
+    # unit-tested. test/ runs with TERRATEST_LIVE unset, so the live test skips.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.x"
+          cache-dependency-path: "**/go.sum"
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l examples test)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed on:"; echo "$unformatted"; exit 1
+          fi
+      - name: vet, build, test
+        run: |
+          for mod in examples/serverless-api/app examples/scheduled-fargate-job/job test; do
+            echo "== $mod"
+            (cd "$mod" && go vet ./... && go build ./... && go test -count=1 ./...)
+          done
+      - name: build the Lambda zip
+        run: ./examples/serverless-api/build.sh
+
+  repo-hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: no state, env, tfvars or plan files tracked
+        run: ./scripts/hygiene.sh
+      - name: shellcheck
+        run: shellcheck scripts/*.sh examples/*/*.sh
+
+  all-green:
+    # One check to require in branch protection.
+    if: always()
+    needs: [terraform, tflint, trivy, docs, go, repo-hygiene]
+    runs-on: ubuntu-latest
+    steps:
+      - name: every job passed
+        run: |
+          echo '${{ toJSON(needs) }}' > needs.json
+          if grep -q '"result": "\(failure\|cancelled\|skipped\)"' needs.json; then
+            cat needs.json; exit 1
+          fi

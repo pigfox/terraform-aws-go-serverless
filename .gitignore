@@ -23,6 +23,8 @@ examples/serverless-api/build/
 .env.*
 *.env
 
-# Go
+# Go, including what a bare `go build` leaves in the example directories
+examples/serverless-api/app/app
+examples/scheduled-fargate-job/job/job
 *.test
 cover.out
